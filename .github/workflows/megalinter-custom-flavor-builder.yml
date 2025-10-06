@@ -35,6 +35,11 @@ on:
         description: 'MegaLinter version to build (e.g., v7.5.0)'
         required: false
         type: string
+      is-latest:
+        description: 'Mark this version as latest'
+        required: false
+        type: boolean
+        default: false
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -68,6 +73,19 @@ jobs:
             echo "Using default tag: $TAG"
           fi
           echo "tag=$TAG" >> $GITHUB_OUTPUT
+          
+          # Determine is-latest flag
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            IS_LATEST="${{ inputs.is-latest }}"
+            echo "Using workflow input is-latest: $IS_LATEST"
+          elif [ "${{ github.event_name }}" == "release" ]; then
+            IS_LATEST="true"
+            echo "Release event - is-latest: true"
+          else
+            IS_LATEST="false"
+            echo "Default is-latest: false"
+          fi
+          echo "is-latest=$IS_LATEST" >> $GITHUB_OUTPUT
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
@@ -89,7 +107,7 @@ jobs:
         uses: oxsecurity/megalinter/flavors/custom-builder@main
         with:
           megalinter-custom-flavor-builder-tag: ${{ steps.determine-tag.outputs.tag }}
-          is-latest: ${{ github.event_name == 'release' && 'true' || 'false' }}
+          is-latest: ${{ steps.determine-tag.outputs.is-latest }}
           upload-to-ghcr: "true"
           upload-to-dockerhub: ${{ secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_PASSWORD != '' && 'true' || 'false' }}
           dockerhub-repo: ${{ vars.DOCKERHUB_REPO }}

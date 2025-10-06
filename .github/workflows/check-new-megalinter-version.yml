@@ -180,6 +180,7 @@ jobs:
           gh workflow run megalinter-custom-flavor-builder.yml \
             --ref main \
             --field megalinter-version="$NEW_VERSION" \
+            --field is-latest="true" \
             2>&1 | tee workflow_trigger.log
           EXIT_CODE=$?
           set -e  # Re-enable exit on error
