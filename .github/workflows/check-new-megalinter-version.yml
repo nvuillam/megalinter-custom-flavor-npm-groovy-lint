@@ -19,6 +19,22 @@
 #
 # Required permissions:
 #   - contents: write (to create releases and tags)
+#
+# Optional repository secrets (for triggering workflows):
+#   - PAT_TOKEN: Personal Access Token with 'repo' and 'workflow' scopes
+#     If not provided, the workflow will still create releases, but won't
+#     be able to manually trigger the builder workflow (it will rely on
+#     the automatic release trigger instead).
+#
+# To create a PAT:
+#   1. Go to GitHub Settings > Developer settings > Personal access tokens > Tokens (classic)
+#   2. Click "Generate new token (classic)"
+#   3. Give it a descriptive name (e.g., "MegaLinter Auto-Release")
+#   4. Select scopes: 'repo' (full control) and 'workflow' (update workflows)
+#   5. Click "Generate token" and copy the token
+#   6. In your repository, go to Settings > Secrets and variables > Actions
+#   7. Click "New repository secret"
+#   8. Name: PAT_TOKEN, Value: paste your token
 # =============================================================
 
 name: Check for New MegaLinter Version
@@ -147,15 +163,37 @@ jobs:
       - name: Trigger Custom Flavor Builder Workflow
         if: steps.find-new-version.outputs.new_version_found == 'true'
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Use PAT_TOKEN if available, otherwise fall back to GITHUB_TOKEN
+          # Note: GITHUB_TOKEN doesn't have permission to trigger workflows
+          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
           echo "Triggering megalinter-custom-flavor-builder workflow..."
           
           # Trigger the workflow using GitHub CLI
-          gh workflow run megalinter-custom-flavor-builder.yml \
-            --ref main
-          
-          echo "✅ Release Workflow triggered successfully"
+          if gh workflow run megalinter-custom-flavor-builder.yml --ref main 2>&1 | tee workflow_trigger.log; then
+            echo "✅ Builder workflow triggered successfully"
+          else
+            if grep -q "Resource not accessible by integration" workflow_trigger.log || grep -q "HTTP 403" workflow_trigger.log; then
+              echo "::error::❌ Unable to trigger workflow due to insufficient token permissions."
+              echo "::error::The release was created, but the builder workflow could not be manually triggered."
+              echo ""
+              echo "::error::To fix this, create a Personal Access Token (PAT) with proper permissions:"
+              echo "::error::1. Go to GitHub Settings > Developer settings > Personal access tokens > Tokens (classic)"
+              echo "::error::2. Click 'Generate new token (classic)'"
+              echo "::error::3. Name it 'MegaLinter Auto-Release'"
+              echo "::error::4. Select scopes: 'repo' (full control) and 'workflow' (update workflows)"
+              echo "::error::5. Generate and copy the token"
+              echo "::error::6. In repository Settings > Secrets and variables > Actions"
+              echo "::error::7. Create new secret: Name='PAT_TOKEN', Value=<your-token>"
+              echo ""
+              echo "::error::NOTE: The release event should still trigger the builder workflow automatically."
+              exit 1
+            else
+              echo "::error::Failed to trigger workflow for unknown reason"
+              cat workflow_trigger.log
+              exit 1
+            fi
+          fi
 
       - name: Summary
         if: always()
@@ -170,6 +208,24 @@ jobs:
             echo "✅ New version found: **${{ steps.find-new-version.outputs.new_version }}**" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "A new release has been created, which will trigger the custom flavor builder workflow." >> $GITHUB_STEP_SUMMARY
+            
+            # Check if PAT_TOKEN is configured
+            if [ -z "${{ secrets.PAT_TOKEN }}" ]; then
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "### ⚠️ Optional: Configure PAT for Direct Workflow Triggering" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "The release will automatically trigger the builder workflow, but you can also enable manual triggering:" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "**To create and configure a Personal Access Token (PAT):**" >> $GITHUB_STEP_SUMMARY
+              echo "1. Go to [GitHub Settings > Developer settings > Personal access tokens > Tokens (classic)](https://github.com/settings/tokens)" >> $GITHUB_STEP_SUMMARY
+              echo "2. Click **Generate new token (classic)**" >> $GITHUB_STEP_SUMMARY
+              echo "3. Name: \`MegaLinter Auto-Release\`" >> $GITHUB_STEP_SUMMARY
+              echo "4. Select scopes: ✅ **repo** (full control) and ✅ **workflow** (update workflows)" >> $GITHUB_STEP_SUMMARY
+              echo "5. Click **Generate token** and copy it" >> $GITHUB_STEP_SUMMARY
+              echo "6. Go to [Repository Settings > Secrets and variables > Actions](https://github.com/${{ github.repository }}/settings/secrets/actions)" >> $GITHUB_STEP_SUMMARY
+              echo "7. Click **New repository secret**" >> $GITHUB_STEP_SUMMARY
+              echo "8. Name: \`PAT_TOKEN\`, Value: paste your token" >> $GITHUB_STEP_SUMMARY
+            fi
           else
             echo "ℹ️ No new versions found. Repository is up to date with MegaLinter." >> $GITHUB_STEP_SUMMARY
           fi
