@@ -194,6 +194,12 @@ jobs:
             if grep -q "Resource not accessible by integration" workflow_trigger.log || grep -q "HTTP 403" workflow_trigger.log; then
               echo "::error::The workflow could not be triggered due to insufficient token permissions."
               echo "::error::"
+              echo "::error::Deleting the release so it can be recreated once PAT_TOKEN is configured..."
+              
+              # Delete the release and tag that was just created
+              gh release delete "${{ steps.find-new-version.outputs.new_version }}" --yes --cleanup-tag 2>&1 || echo "::warning::Could not delete release (it may not exist or already be deleted)"
+              
+              echo "::error::"
               echo "::error::To fix this, create a Fine-grained Personal Access Token (recommended - more secure):"
               echo "::error::1. Go to: https://github.com/settings/personal-access-tokens/new"
               echo "::error::2. Token name: 'MegaLinter Auto-Release'"
@@ -208,7 +214,7 @@ jobs:
               echo "::error::9. Click 'New repository secret'"
               echo "::error::10. Name: 'PAT_TOKEN', Value: paste your token"
               echo "::error::"
-              echo "::error::NOTE: The release was created and may trigger the builder workflow automatically via the release event."
+              echo "::error::After configuring the token, the workflow will automatically run again and create the release."
             fi
             
             exit 1
