@@ -21,20 +21,25 @@
 #   - contents: write (to create releases and tags)
 #
 # Optional repository secrets (for triggering workflows):
-#   - PAT_TOKEN: Personal Access Token with 'repo' and 'workflow' scopes
+#   - PAT_TOKEN: Personal Access Token with 'contents' and 'actions' permissions
 #     If not provided, the workflow will still create releases, but won't
 #     be able to manually trigger the builder workflow (it will rely on
 #     the automatic release trigger instead).
 #
-# To create a PAT:
-#   1. Go to GitHub Settings > Developer settings > Personal access tokens > Tokens (classic)
-#   2. Click "Generate new token (classic)"
+# To create a Fine-grained PAT (recommended - more secure):
+#   1. Go to GitHub Settings > Developer settings > Personal access tokens > Fine-grained tokens
+#   2. Click "Generate new token"
 #   3. Give it a descriptive name (e.g., "MegaLinter Auto-Release")
-#   4. Select scopes: 'repo' (full control) and 'workflow' (update workflows)
-#   5. Click "Generate token" and copy the token
-#   6. In your repository, go to Settings > Secrets and variables > Actions
-#   7. Click "New repository secret"
-#   8. Name: PAT_TOKEN, Value: paste your token
+#   4. Set expiration (e.g., 90 days or 1 year)
+#   5. Under "Repository access", select "Only select repositories"
+#   6. Choose this repository (megalinter-custom-flavor-npm-groovy-lint)
+#   7. Under "Permissions" > "Repository permissions":
+#      - Contents: Read and write
+#      - Actions: Read and write
+#   8. Click "Generate token" and copy the token
+#   9. In your repository, go to Settings > Secrets and variables > Actions
+#   10. Click "New repository secret"
+#   11. Name: PAT_TOKEN, Value: paste your token
 # =============================================================
 
 name: Check for New MegaLinter Version
@@ -169,31 +174,47 @@ jobs:
         run: |
           echo "Triggering megalinter-custom-flavor-builder workflow..."
           
-          # Trigger the workflow using GitHub CLI
-          if gh workflow run megalinter-custom-flavor-builder.yml --ref main 2>&1 | tee workflow_trigger.log; then
-            echo "✅ Builder workflow triggered successfully"
-          else
+          # Trigger the workflow using GitHub CLI and capture output
+          set +e  # Don't exit immediately on error
+          gh workflow run megalinter-custom-flavor-builder.yml --ref main 2>&1 | tee workflow_trigger.log
+          EXIT_CODE=$?
+          set -e  # Re-enable exit on error
+          
+          # Check for errors in the output
+          if grep -q "could not create workflow dispatch event" workflow_trigger.log || \
+             grep -q "Resource not accessible by integration" workflow_trigger.log || \
+             grep -q "HTTP 403" workflow_trigger.log || \
+             [ $EXIT_CODE -ne 0 ]; then
+            
+            echo "::error::❌ Failed to trigger workflow!"
+            echo ""
+            cat workflow_trigger.log
+            echo ""
+            
             if grep -q "Resource not accessible by integration" workflow_trigger.log || grep -q "HTTP 403" workflow_trigger.log; then
-              echo "::error::❌ Unable to trigger workflow due to insufficient token permissions."
-              echo "::error::The release was created, but the builder workflow could not be manually triggered."
-              echo ""
-              echo "::error::To fix this, create a Personal Access Token (PAT) with proper permissions:"
-              echo "::error::1. Go to GitHub Settings > Developer settings > Personal access tokens > Tokens (classic)"
-              echo "::error::2. Click 'Generate new token (classic)'"
-              echo "::error::3. Name it 'MegaLinter Auto-Release'"
-              echo "::error::4. Select scopes: 'repo' (full control) and 'workflow' (update workflows)"
-              echo "::error::5. Generate and copy the token"
-              echo "::error::6. In repository Settings > Secrets and variables > Actions"
-              echo "::error::7. Create new secret: Name='PAT_TOKEN', Value=<your-token>"
-              echo ""
-              echo "::error::NOTE: The release event should still trigger the builder workflow automatically."
-              exit 1
-            else
-              echo "::error::Failed to trigger workflow for unknown reason"
-              cat workflow_trigger.log
-              exit 1
+              echo "::error::The workflow could not be triggered due to insufficient token permissions."
+              echo "::error::"
+              echo "::error::To fix this, create a Fine-grained Personal Access Token (recommended - more secure):"
+              echo "::error::1. Go to: https://github.com/settings/personal-access-tokens/new"
+              echo "::error::2. Token name: 'MegaLinter Auto-Release'"
+              echo "::error::3. Expiration: Choose 90 days or 1 year"
+              echo "::error::4. Repository access: Select 'Only select repositories'"
+              echo "::error::5. Choose repository: ${{ github.repository }}"
+              echo "::error::6. Repository permissions:"
+              echo "::error::   - Contents: Read and write"
+              echo "::error::   - Actions: Read and write"
+              echo "::error::7. Click 'Generate token' and copy it"
+              echo "::error::8. Go to: https://github.com/${{ github.repository }}/settings/secrets/actions"
+              echo "::error::9. Click 'New repository secret'"
+              echo "::error::10. Name: 'PAT_TOKEN', Value: paste your token"
+              echo "::error::"
+              echo "::error::NOTE: The release was created and may trigger the builder workflow automatically via the release event."
             fi
+            
+            exit 1
           fi
+          
+          echo "✅ Builder workflow triggered successfully"
 
       - name: Summary
         if: always()
@@ -216,15 +237,19 @@ jobs:
               echo "" >> $GITHUB_STEP_SUMMARY
               echo "The release will automatically trigger the builder workflow, but you can also enable manual triggering:" >> $GITHUB_STEP_SUMMARY
               echo "" >> $GITHUB_STEP_SUMMARY
-              echo "**To create and configure a Personal Access Token (PAT):**" >> $GITHUB_STEP_SUMMARY
-              echo "1. Go to [GitHub Settings > Developer settings > Personal access tokens > Tokens (classic)](https://github.com/settings/tokens)" >> $GITHUB_STEP_SUMMARY
-              echo "2. Click **Generate new token (classic)**" >> $GITHUB_STEP_SUMMARY
-              echo "3. Name: \`MegaLinter Auto-Release\`" >> $GITHUB_STEP_SUMMARY
-              echo "4. Select scopes: ✅ **repo** (full control) and ✅ **workflow** (update workflows)" >> $GITHUB_STEP_SUMMARY
-              echo "5. Click **Generate token** and copy it" >> $GITHUB_STEP_SUMMARY
-              echo "6. Go to [Repository Settings > Secrets and variables > Actions](https://github.com/${{ github.repository }}/settings/secrets/actions)" >> $GITHUB_STEP_SUMMARY
-              echo "7. Click **New repository secret**" >> $GITHUB_STEP_SUMMARY
-              echo "8. Name: \`PAT_TOKEN\`, Value: paste your token" >> $GITHUB_STEP_SUMMARY
+              echo "**To create a Fine-grained Personal Access Token (recommended - more secure):**" >> $GITHUB_STEP_SUMMARY
+              echo "1. Go to [GitHub Settings > Personal access tokens > Fine-grained tokens](https://github.com/settings/personal-access-tokens/new)" >> $GITHUB_STEP_SUMMARY
+              echo "2. Token name: \`MegaLinter Auto-Release\`" >> $GITHUB_STEP_SUMMARY
+              echo "3. Expiration: Choose 90 days or 1 year" >> $GITHUB_STEP_SUMMARY
+              echo "4. Repository access: **Only select repositories**" >> $GITHUB_STEP_SUMMARY
+              echo "5. Choose repository: \`${{ github.repository }}\`" >> $GITHUB_STEP_SUMMARY
+              echo "6. Repository permissions:" >> $GITHUB_STEP_SUMMARY
+              echo "   - **Contents**: Read and write" >> $GITHUB_STEP_SUMMARY
+              echo "   - **Actions**: Read and write" >> $GITHUB_STEP_SUMMARY
+              echo "7. Click **Generate token** and copy it" >> $GITHUB_STEP_SUMMARY
+              echo "8. Go to [Repository Settings > Secrets](https://github.com/${{ github.repository }}/settings/secrets/actions)" >> $GITHUB_STEP_SUMMARY
+              echo "9. Click **New repository secret**" >> $GITHUB_STEP_SUMMARY
+              echo "10. Name: \`PAT_TOKEN\`, Value: paste your token" >> $GITHUB_STEP_SUMMARY
             fi
           else
             echo "ℹ️ No new versions found. Repository is up to date with MegaLinter." >> $GITHUB_STEP_SUMMARY
