@@ -30,6 +30,11 @@ on:
   release:
     types: [edited, published]
   workflow_dispatch:
+    inputs:
+      megalinter-version:
+        description: 'MegaLinter version to build (e.g., v7.5.0)'
+        required: false
+        type: string
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -48,6 +53,21 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Determine MegaLinter Version Tag
+        id: determine-tag
+        run: |
+          if [ -n "${{ inputs.megalinter-version }}" ]; then
+            TAG="${{ inputs.megalinter-version }}"
+            echo "Using workflow input version: $TAG"
+          elif [ "${{ github.event_name }}" == "release" ]; then
+            TAG="${{ github.event.release.tag_name }}"
+            echo "Using release tag: $TAG"
+          else
+            TAG="beta"
+            echo "Using default tag: $TAG"
+          fi
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
@@ -68,7 +88,7 @@ jobs:
       - name: Build MegaLinter Custom Flavor
         uses: oxsecurity/megalinter/flavors/custom-builder@main
         with:
-          megalinter-custom-flavor-builder-tag: ${{ github.event_name == 'release' && github.event.release.tag_name || 'beta' }}
+          megalinter-custom-flavor-builder-tag: ${{ steps.determine-tag.outputs.tag }}
           is-latest: ${{ github.event_name == 'release' && 'true' || 'false' }}
           upload-to-ghcr: "true"
           upload-to-dockerhub: ${{ secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_PASSWORD != '' && 'true' || 'false' }}
