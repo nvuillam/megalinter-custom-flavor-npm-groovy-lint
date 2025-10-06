@@ -20,11 +20,10 @@
 # Required permissions:
 #   - contents: write (to create releases and tags)
 #
-# Optional repository secrets (for triggering workflows):
+# Required repository secrets:
 #   - PAT_TOKEN: Personal Access Token with 'contents' and 'actions' permissions
-#     If not provided, the workflow will still create releases, but won't
-#     be able to manually trigger the builder workflow (it will rely on
-#     the automatic release trigger instead).
+#     This is required to trigger the builder workflow. Without it, the workflow
+#     will fail and the release will be deleted (to be recreated once the token is set).
 #
 # To create a Fine-grained PAT (recommended - more secure):
 #   1. Go to GitHub Settings > Developer settings > Personal access tokens > Fine-grained tokens
@@ -200,6 +199,8 @@ jobs:
               gh release delete "${{ steps.find-new-version.outputs.new_version }}" --yes --cleanup-tag 2>&1 || echo "::warning::Could not delete release (it may not exist or already be deleted)"
               
               echo "::error::"
+              echo "::error::⚠️ PAT_TOKEN is REQUIRED to create releases and trigger the builder workflow."
+              echo "::error::"
               echo "::error::To fix this, create a Fine-grained Personal Access Token (recommended - more secure):"
               echo "::error::1. Go to: https://github.com/settings/personal-access-tokens/new"
               echo "::error::2. Token name: 'MegaLinter Auto-Release'"
@@ -214,7 +215,7 @@ jobs:
               echo "::error::9. Click 'New repository secret'"
               echo "::error::10. Name: 'PAT_TOKEN', Value: paste your token"
               echo "::error::"
-              echo "::error::After configuring the token, the workflow will automatically run again and create the release."
+              echo "::error::Once configured, run this workflow again (manually or wait for the next scheduled run)."
             fi
             
             exit 1
@@ -239,9 +240,11 @@ jobs:
             # Check if PAT_TOKEN is configured
             if [ -z "${{ secrets.PAT_TOKEN }}" ]; then
               echo "" >> $GITHUB_STEP_SUMMARY
-              echo "### ⚠️ Optional: Configure PAT for Direct Workflow Triggering" >> $GITHUB_STEP_SUMMARY
+              echo "### ⚠️ REQUIRED: Configure PAT_TOKEN" >> $GITHUB_STEP_SUMMARY
               echo "" >> $GITHUB_STEP_SUMMARY
-              echo "The release will automatically trigger the builder workflow, but you can also enable manual triggering:" >> $GITHUB_STEP_SUMMARY
+              echo "**PAT_TOKEN is required to trigger the builder workflow and create releases.**" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "Without it, releases will be automatically deleted and the workflow will fail." >> $GITHUB_STEP_SUMMARY
               echo "" >> $GITHUB_STEP_SUMMARY
               echo "**To create a Fine-grained Personal Access Token (recommended - more secure):**" >> $GITHUB_STEP_SUMMARY
               echo "1. Go to [GitHub Settings > Personal access tokens > Fine-grained tokens](https://github.com/settings/personal-access-tokens/new)" >> $GITHUB_STEP_SUMMARY
